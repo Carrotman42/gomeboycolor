@@ -4,10 +4,16 @@ import (
 	"components"
 	"constants"
 	"github.com/go-gl/gl"
+	"os"
 	"github.com/go-gl/glfw"
 	"log"
 	"types"
+	"encoding/gob"
+	"compress/gzip"
+	"fmt"
 )
+var _ = fmt.Print
+var _ = gzip.NewReader
 
 const PREFIX string = "IO"
 const ROW_1 byte = 0x10
@@ -128,23 +134,18 @@ type IO struct {
 
 func NewIO() *IO {
 	var i *IO = new(IO)
-	i.KeyHandler = new(KeyHandler)
-	i.Display = new(Display)
-	i.ScreenOutputChannel = make(chan *types.Screen)
-	i.AudioOutputChannel = make(chan int)
 	return i
 }
 
 func (i *IO) Init(title string, screenSize int, onCloseHandler func()) error {
-	var err error
+	i.KeyHandler = new(KeyHandler)
+	i.Display = new(Display)
+	i.ScreenOutputChannel = make(chan *types.Screen)
+	i.AudioOutputChannel = make(chan int)
 
-	err = glfw.Init()
-	if err != nil {
+	if err := glfw.Init(); err != nil {
 		return err
-	}
-
-	err = i.Display.init(title, screenSize)
-	if err != nil {
+	} else if err = i.Display.init(title, screenSize); err != nil {
 		return err
 	}
 
@@ -223,7 +224,40 @@ func (s *Display) init(title string, screenSizeMultiplier int) error {
 
 }
 
+var gzipIn = make(chan *types.Screen, 10)
+
+func gzipRout(outfile *os.File) {
+	defer outfile.Close()
+	
+	wr := outfile//gzip.NewWriter(outfile)
+	
+	g := gob.NewEncoder(wr)
+	
+	i := 0
+	for r := range gzipIn {
+		if err := g.Encode(&r); err != nil {
+			panic(err)
+		}
+		if i++; i > 1000 {
+			break
+		}
+	}
+	fmt.Println("gzipDone")
+}
+
+var outfile = func() *os.File {
+	if f, err := os.Create("screensave"); err != nil {
+		panic(err)
+	} else {
+		go gzipRout(f)
+		return f
+	}
+}()
+
 func (s *Display) drawFrame(screenData *types.Screen) {
+	cpy := *screenData
+	gzipIn <- &cpy
+	
 	gl.Clear(gl.COLOR_BUFFER_BIT)
 	gl.Disable(gl.DEPTH_TEST)
 	gl.PointSize(float32(s.ScreenSizeMultiplier) + 1.0)

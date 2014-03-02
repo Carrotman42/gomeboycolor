@@ -118,7 +118,7 @@ def package(name, version, artifacts_dir)
 	sh "rm -rf artifacts"
 	sh "mkdir artifacts"
 	cd artifacts_dir
-	sh "zip -r ../artifacts/#{filename} ./*"
+	#sh "zip -r ../artifacts/#{filename} ./*"
 end
 
 def get_deps(download)

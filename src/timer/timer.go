@@ -42,13 +42,12 @@ type Counter struct {
 	Value          byte
 }
 
-func NewCounter(name string, initialFreq Frequency) *Counter {
-	var counter *Counter = new(Counter)
-	counter.Reset()
-	counter.Name = name
-	counter.SetFrequency(initialFreq)
-	return counter
+func (c *Counter) Init(name string, initialFreq Frequency) {
+	c.Reset()
+	c.Name = name
+	c.SetFrequency(initialFreq)
 }
+
 
 func (c *Counter) String() string {
 	return fmt.Sprint(c.Name+":", " Frequency: ", c.ClockFrequency, " (", FrequenciesToCycles[c.ClockFrequency], " cycles) ", "| Current Counter: ", c.ClockCounter, " | Value: ", c.Value)
@@ -81,8 +80,8 @@ func (c *Counter) Step(cycles int) bool {
 }
 
 type Timer struct {
-	timaCounter *Counter
-	divCounter  *Counter
+	timaCounter Counter
+	divCounter  Counter
 
 	tacRegister     byte
 	tmaRegister     byte
@@ -90,13 +89,11 @@ type Timer struct {
 	interruptThrown bool
 }
 
-func NewTimer() *Timer {
-	var t *Timer = new(Timer)
-	t.divCounter = NewCounter("DIV", freq16384)
-	t.timaCounter = NewCounter("TIMA", freq4096)
+func (t *Timer) Init() {
+	t.divCounter.Init("DIV", freq16384)
+	t.timaCounter.Init("TIMA", freq4096)
 	t.tacRegister = 0x00
 	t.tmaRegister = 0x00
-	return t
 }
 
 func (timer *Timer) Name() string {

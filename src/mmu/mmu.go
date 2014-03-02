@@ -35,7 +35,7 @@ type MemoryMappedUnit interface {
 	ReadByte(address types.Word) byte
 	ReadWord(address types.Word) types.Word
 	SetInBootMode(mode bool)
-	LoadBIOS(data []byte) (bool, error)
+	LoadBIOS(data []byte) error
 	LoadCartridge(cart *cartridge.Cartridge)
 	Reset()
 }
@@ -70,12 +70,11 @@ type GbcMMU struct {
 	serialTmp                         byte
 }
 
-func NewGbcMMU() *GbcMMU {
-	var mmu *GbcMMU = new(GbcMMU)
+func (mmu *GbcMMU) Init() {
 	mmu.peripheralIOMap = make(map[types.Word]components.Peripheral)
 	mmu.Reset()
-	return mmu
 }
+
 
 func (mmu *GbcMMU) Reset() {
 	log.Println(PREFIX+": Resetting", PREFIX)
@@ -244,16 +243,16 @@ func (mmu *GbcMMU) PrintPeripheralMap() {
 }
 
 //Puts BIOS ROM into special area in MMU
-func (mmu *GbcMMU) LoadBIOS(data []byte) (bool, error) {
+func (mmu *GbcMMU) LoadBIOS(data []byte) error {
 	log.Println(PREFIX+": Loading", len(data), "byte BIOS ROM into MMU")
 	if len(data) > len(mmu.bios) {
-		return false, ROMIsBiggerThanRegion
+		return ROMIsBiggerThanRegion
 	}
 
 	for i, b := range data {
 		mmu.bios[i] = b
 	}
-	return true, nil
+	return nil
 }
 
 func (mmu *GbcMMU) LoadCartridge(cart *cartridge.Cartridge) {

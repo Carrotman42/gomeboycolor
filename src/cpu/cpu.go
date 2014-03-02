@@ -101,12 +101,6 @@ type GbcCPU struct {
 	Speed                   int
 }
 
-func NewCPU() *GbcCPU {
-	cpu := new(GbcCPU)
-	cpu.Reset()
-	return cpu
-}
-
 func (cpu *GbcCPU) LinkMMU(m mmu.MemoryMappedUnit) {
 	cpu.mmu = m
 	log.Println(PREFIX, "Linked CPU to MMU")

@@ -73,12 +73,8 @@ type Config struct {
 	SavesDir    string
 }
 
-func NewConfig() *Config {
-	var c *Config = new(Config)
-	return c
-}
 
-func (c *Config) LoadConfig() error {
+func (c *Config) Init() error {
 	settingsFilepath := filepath.Join(c.SettingsDir, "config.json")
 	if ok, _ := utils.Exists(settingsFilepath); ok {
 		log.Println("Loading configuration from file:", settingsFilepath)

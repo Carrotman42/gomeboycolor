@@ -27,13 +27,13 @@ const TITLE string = "gomeboycolor"
 var VERSION string
 
 type GomeboyColor struct {
-	gpu                    *gpu.GPU
-	cpu                    *cpu.GbcCPU
-	mmu                    *mmu.GbcMMU
-	io                     *inputoutput.IO
-	apu                    *apu.APU
-	timer                  *timer.Timer
-	debugOptions           *DebugOptions
+	gpu                    gpu.GPU
+	cpu                    cpu.GbcCPU
+	mmu                    mmu.GbcMMU
+	io                     inputoutput.IO
+	apu                    apu.APU
+	timer                  timer.Timer
+	debugOptions           DebugOptions
 	config                 Config
 	cpuClockAcc            int
 	frameCount             int
@@ -46,27 +46,55 @@ type GomeboyColor struct {
 func NewGBC() *GomeboyColor {
 	gbc := new(GomeboyColor)
 
-	gbc.mmu = mmu.NewGbcMMU()
-	gbc.cpu = cpu.NewCPU()
-	gbc.cpu.LinkMMU(gbc.mmu)
+	gbc.mmu.Init()
+	gbc.cpu.Reset()
+	gbc.cpu.LinkMMU(&gbc.mmu)
+	gbc.gpu.Reset()
+	gbc.apu.Init()
+	gbc.timer.Init()
 
-	gbc.io = inputoutput.NewIO()
-	gbc.gpu = gpu.NewGPU()
-	gbc.apu = apu.NewAPU()
-	gbc.timer = timer.NewTimer()
+	if err := gbc.config.Init(); err != nil {
+		log.Fatalf("Error encountered attempting to load configuration file: %v", err)
+	}
+	
+	//command line flags take precedence
+	gbc.config.OnCloseHandler = gbc.onClose
+	gbc.config.OverrideConfigWithAnySetFlags()
+	gbc.debugOptions.Init(gbc.config.DumpState)
+	
+	if err := gbc.io.Init(gbc.config.Title, gbc.config.ScreenSize, gbc.onClose); err != nil {
+		log.Fatalf("%v", err)
+	}
 
 	//mmu will process interrupt requests from GPU (i.e. it will set appropriate flags)
-	gbc.gpu.LinkIRQHandler(gbc.mmu)
-	gbc.timer.LinkIRQHandler(gbc.mmu)
-	gbc.io.KeyHandler.LinkIRQHandler(gbc.mmu)
+	gbc.gpu.LinkIRQHandler(&gbc.mmu)
+	gbc.timer.LinkIRQHandler(&gbc.mmu)
+	gbc.io.KeyHandler.LinkIRQHandler(&gbc.mmu)
 
-	gbc.mmu.ConnectPeripheral(gbc.apu, 0xFF10, 0xFF3F)
-	gbc.mmu.ConnectPeripheral(gbc.gpu, 0x8000, 0x9FFF)
-	gbc.mmu.ConnectPeripheral(gbc.gpu, 0xFE00, 0xFE9F)
-	gbc.mmu.ConnectPeripheral(gbc.gpu, 0xFF57, 0xFF6F)
-	gbc.mmu.ConnectPeripheralOn(gbc.gpu, 0xFF40, 0xFF41, 0xFF42, 0xFF43, 0xFF44, 0xFF45, 0xFF47, 0xFF48, 0xFF49, 0xFF4A, 0xFF4B, 0xFF4F)
+	gbc.mmu.ConnectPeripheral(&gbc.apu, 0xFF10, 0xFF3F)
+	gbc.mmu.ConnectPeripheral(&gbc.gpu, 0x8000, 0x9FFF)
+	gbc.mmu.ConnectPeripheral(&gbc.gpu, 0xFE00, 0xFE9F)
+	gbc.mmu.ConnectPeripheral(&gbc.gpu, 0xFF57, 0xFF6F)
+	gbc.mmu.ConnectPeripheralOn(&gbc.gpu, 0xFF40, 0xFF41, 0xFF42, 0xFF43, 0xFF44, 0xFF45, 0xFF47, 0xFF48, 0xFF49, 0xFF4A, 0xFF4B, 0xFF4F)
 	gbc.mmu.ConnectPeripheralOn(gbc.io.KeyHandler, 0xFF00)
-	gbc.mmu.ConnectPeripheralOn(gbc.timer, 0xFF04, 0xFF05, 0xFF06, 0xFF07)
+	gbc.mmu.ConnectPeripheralOn(&gbc.timer, 0xFF04, 0xFF05, 0xFF06, 0xFF07)
+
+	if gbc.config.Debug {
+		log.Println("Emulator will start in debug mode")
+		gbc.debugOptions.debuggerOn = true
+
+		//set breakpoint if defined
+		if b, err := utils.StringToWord(gbc.config.BreakOn); err != nil {
+			log.Fatalln("Cannot parse breakpoint:", gbc.config.BreakOn, "\n\t", err)
+		} else {
+			gbc.debugOptions.breakWhen = types.Word(b)
+			log.Println("Emulator will break into debugger when PC = ", gbc.debugOptions.breakWhen)
+		}
+	}
+	
+	if err := gbc.mmu.LoadBIOS(BOOTROM); err != nil {
+		log.Fatalf("Error loading bootrom: %v", err)
+	}
 
 	return gbc
 }
@@ -159,63 +187,17 @@ func main() {
 	}
 
 	//Parse and validate settings file (if found)
-	conf := NewConfig()
-
-	if err := conf.ConfigureSettingsDirectory(); err != nil {
-		log.Fatalf("Error configuring settings directory: %v", err)
-	}
-
-	conferr := conf.LoadConfig()
-	if conferr != nil {
-		log.Fatalf("Error encountered attempting to load configuration file: %v", conferr)
-	} else {
-		//command line flags take precedence
-		conf.OverrideConfigWithAnySetFlags()
-	}
-
-	fmt.Println(conf)
-
+	gbc := NewGBC()
+	
 	romFilename := flag.Arg(0)
-	cart, err := cartridge.NewCartridge(romFilename)
-	if err != nil {
-		log.Println(err)
-		return
+	if cart, err := cartridge.NewCartridge(romFilename); err != nil {
+		log.Fatal(err)
+	} else {
+		gbc.mmu.LoadCartridge(cart)
+		gbc.config.Title += fmt.Sprintf(" - %s - %s", filepath.Base(cart.Filename), cart.Title)
 	}
 
-	var gbc *GomeboyColor = NewGBC()
-	gbc.config = *conf
-	b, er := gbc.mmu.LoadBIOS(BOOTROM)
-	if !b {
-		log.Println("Error loading bootrom:", er)
-		return
-	}
-
-	gbc.mmu.LoadCartridge(cart)
-	gbc.debugOptions = new(DebugOptions)
-	gbc.debugOptions.Init(gbc.config.DumpState)
-
-	if gbc.config.Debug {
-		log.Println("Emulator will start in debug mode")
-		gbc.debugOptions.debuggerOn = true
-
-		//set breakpoint if defined
-		if b, err := utils.StringToWord(gbc.config.BreakOn); err != nil {
-			log.Fatalln("Cannot parse breakpoint:", gbc.config.BreakOn, "\n\t", err)
-		} else {
-			gbc.debugOptions.breakWhen = types.Word(b)
-			log.Println("Emulator will break into debugger when PC = ", gbc.debugOptions.breakWhen)
-		}
-	}
-
-	//append cartridge name and filename to title
-	gbc.config.Title += fmt.Sprintf(" - %s - %s", filepath.Base(cart.Filename), cart.Title)
-	gbc.config.OnCloseHandler = gbc.onClose
-
-	ioInitializeErr := gbc.io.Init(gbc.config.Title, gbc.config.ScreenSize, gbc.onClose)
-
-	if ioInitializeErr != nil {
-		log.Fatalf("%v", ioInitializeErr)
-	}
+	
 
 	//load RAM into MBC (if supported)
 	gbc.mmu.LoadCartridgeRam(gbc.config.SavesDir)

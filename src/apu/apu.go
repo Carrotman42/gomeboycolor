@@ -16,10 +16,8 @@ type APU struct {
 	mem [0x41]byte
 }
 
-func NewAPU() *APU {
-	var a *APU = new(APU)
+func (a *APU) Init() {
 	a.Reset()
-	return a
 }
 
 func (apu *APU) Name() string {

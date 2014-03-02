@@ -680,8 +680,8 @@ func (m *MockMMU) Reset() {
 	m.memory = make(map[types.Word]byte)
 }
 
-func (m *MockMMU) LoadBIOS(data []byte) (bool, error) {
-	return true, nil
+func (m *MockMMU) LoadBIOS(data []byte) error {
+	return nil
 }
 
 func (m *MockMMU) LoadCartridge(cart *cartridge.Cartridge) {
